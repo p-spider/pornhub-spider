@@ -12,10 +12,10 @@ const logger = log4js.getLogger();
 logger.level = 'info';
 
 function parseListPage() {
-	let ele = $(".thumb-block .thumb > a");
+	let ele = document.querySelectorAll(".videoBox .wrap a.img");
 
 	let u = [];
-	ele.each(function (index, elem) {
+	ele.forEach(function (elem, index) {
 		let href = elem.href;
 		u.push(href)
 	});
@@ -25,8 +25,8 @@ function parseListPage() {
 
 function parseVideoPage() {
 	return {
-		name: ((window.html5player.video_title + '.mp4').replace(/ /g, '_')).replace(/\?/g, ''),
-		src: window.html5player.url_high,
+		name: ((window.WIDGET_SHARE.shareTitle + '.mp4').replace(/ /g, '_')).replace(/\?/g, ''),
+		src: window.player_quality_720p
 	};
 }
 
@@ -60,7 +60,7 @@ function download(fileName, filePath) {
 class Spider {
 	constructor() {
 		this.conf = {
-			headless: false,
+			headless: true,
 			devtools: false,
 		};
 		this.browser = null;
@@ -72,21 +72,31 @@ class Spider {
 
 
 	async openListPage(url) {
-		let page = await this.browser.newPage();
-		await page.goto(url);
-		await page.waitForSelector('.thumb-block .thumb > a', {timeout: 3000 * 90});
-		let urlList = await page.evaluate(parseListPage);
-		page.close();
-		return urlList;
+		try {
+			let page = await this.browser.newPage();
+			await page.goto(url);
+			await page.waitForSelector('.videoBox .wrap a.img', {timeout: 3000 * 90});
+			let urlList = await page.evaluate(parseListPage);
+			page.close();
+			return urlList;
+		} catch (err) {
+			logger.error(err);
+			return await this.openListPage(url)
+		}
 	}
 
 
 	async openVideoPage(url) {
-		let page = await this.browser.newPage();
-		await page.goto(url);
-		let urlList = await page.evaluate(parseVideoPage);
-		page.close();
-		return urlList;
+		try {
+			let page = await this.browser.newPage();
+			await page.goto(url);
+			let urlList = await page.evaluate(parseVideoPage);
+			page.close();
+			return urlList;
+		} catch (err) {
+			logger.error(err);
+			return await this.openVideoPage(url)
+		}
 	}
 
 
@@ -100,20 +110,22 @@ class Spider {
 	async run() {
 		await this.init();
 		for (let i = 1; i < 1000; i++) {
-			let url = `http://www.xvideos.com/new/${i}`;
+			let url = `https://www.pornhub.com/video?page=${i}`;
 			let urlList = await this.openListPage(url);
+
 
 			let taskList = [];
 			for (let _url of urlList) {
 				let {name, src} = await this.openVideoPage(_url);
 				logger.info(`find video name:${name}`);
-				taskList.push({name, src});
+				if (src) {
+					taskList.push({name, src});
+				}
 			}
 
 			for (let task of taskList) {
-				logger.info(`start batch download videos:${task.name}`);
+				logger.info(`start batch download videos:${task.name} | ${task.src}`);
 			}
-			taskList.length = 1;
 			await this.batchDownload(taskList);
 		}
 	}
